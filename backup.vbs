@@ -172,11 +172,11 @@ Function PrefixExistingFile(srcFile, targetFile)
         parentPath = FSO.GetParentFolderName(targetFile)
         fileName = FSO.GetFileName(targetFile)
         
-        ' Create the new name with date prefix
-        newName = prefixDate & "_" & fileName
+        ' Create the new name with JBCKPV_ prefix and date
+        newName = "JBCKPV_" & prefixDate & "_" & fileName
         newPath = parentPath & "\" & newName
         
-        ' Rename the old file with the date
+        ' Rename the old file with the versioned prefix
         targetFileObj.Move newPath
         logContent = logContent & "[BACKUP] " & targetFile & vbCrLf
         statsFileUpdate = statsFileUpdate + 1
