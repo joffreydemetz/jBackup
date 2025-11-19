@@ -1,0 +1,87 @@
+MIT License with Disclaimer
+
+Copyright (c) 2025 Joffrey Demetz
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+ADDITIONAL DISCLAIMER AND LIMITATION OF LIABILITY
+
+1. NO WARRANTY
+   This software is provided "AS IS" with absolutely no warranty of any kind.
+   The author makes no guarantees that this software will work correctly,
+   reliably, or safely in any environment or configuration.
+
+2. USE AT YOUR OWN RISK
+   You assume all risks and responsibilities for the use of this software.
+   The author shall not be held liable for any damages, data loss, system
+   failures, or other issues that may arise from the use or misuse of this
+   software.
+
+3. DATA LOSS AND BACKUP
+   This software performs file operations including copying, moving, and
+   renaming files. While designed to preserve data, there is no guarantee
+   against data loss, corruption, or unintended modifications. Users are
+   strongly advised to:
+   - Test the software in a non-production environment first
+   - Maintain separate backups of all important data
+   - Verify backup integrity regularly
+   - Not rely solely on this software for critical data protection
+
+4. SYSTEM IMPACT
+   The author is not responsible for any system performance issues, disk
+   space exhaustion, file system errors, or other technical problems that
+   may result from using this software.
+
+5. COMMERCIAL AND PERSONAL USE
+   This software may be used for both personal and commercial purposes.
+   However, all use is at the user's sole risk and responsibility. The
+   author provides no support, maintenance, or guarantees for any use case.
+
+6. MODIFICATIONS
+   Users may modify this software for their own needs. However, any
+   modifications are made at the user's own risk, and the author bears
+   no responsibility for modified versions.
+
+7. THIRD-PARTY SYSTEMS
+   The author is not responsible for compatibility issues, conflicts, or
+   problems arising from interactions with third-party software, operating
+   systems, hardware, or network infrastructure.
+
+8. NO LIABILITY
+   In no event shall the author be liable for any direct, indirect,
+   incidental, special, exemplary, or consequential damages (including, but
+   not limited to, procurement of substitute goods or services; loss of use,
+   data, or profits; or business interruption) however caused and on any
+   theory of liability, whether in contract, strict liability, or tort
+   (including negligence or otherwise) arising in any way out of the use of
+   this software, even if advised of the possibility of such damage.
+
+9. ACCEPTANCE OF TERMS
+   By using this software, you acknowledge that you have read this license,
+   understand it, and agree to be bound by its terms. If you do not agree
+   with these terms, do not use this software.
+
+10. JURISDICTION
+    This license shall be governed by and construed in accordance with the
+    laws applicable in your jurisdiction, without regard to its conflict of
+    law provisions.
+
+BY USING THIS SOFTWARE, YOU EXPLICITLY ACKNOWLEDGE AND ACCEPT ALL RISKS
+ASSOCIATED WITH ITS USE AND AGREE TO HOLD THE AUTHOR HARMLESS FROM ANY
+AND ALL CLAIMS, DAMAGES, OR LIABILITIES.
