@@ -270,7 +270,7 @@ For issues or questions:
 
 ## Version History
 
-### Current Version
+### 1.0.0
 - Multi-folder backup support
 - Smart subfolder exclusion
 - Custom target folder mapping
@@ -280,9 +280,13 @@ For issues or questions:
 - Power management awareness
 - Queue mode for missed backups
 
-### TODO
-- Remove date prefixed duplicate files after specified period
+### 1.0.1
+- versioned files prefix should be JBCKPV_[DateYYYYMMDD]_file_name.ext
+- Ignore files like document.pdf or photo2.jpg with a unfit name (wait for renaming)
+
+### TODO 
 - Option to move or copy folders instead of copying
+- Option to move only once a week for example ?
 - Calculate total backup size and duration
 - Calculate disk space used by backups
 - Calculate available disk space before backup starts

@@ -536,8 +536,10 @@ if ($response -eq 'Y' -or $response -eq 'y') {
     Write-Host "Executing backup script..." -ForegroundColor Green
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$scriptPath`"" -NoNewWindow -Wait
     Write-Host "Backup script execution completed." -ForegroundColor Green
+} 
+else {
+    Write-Host "Skipping backup script execution." -ForegroundColor Yellow
 }
-Write-Host "Skipping backup script execution." -ForegroundColor Yellow
 
 Write-Host ""
 
