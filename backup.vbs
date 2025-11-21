@@ -6,8 +6,10 @@ Dim scriptPath, configPath, logPath
 
 scriptPath = FSO.GetParentFolderName(WScript.ScriptFullName)
 configPath = scriptPath & "\backup.ini"
+invalidNamesPath = scriptPath & "\invalidnames.txt"
 logPath = scriptPath & "\log"
 
+' Ensure log directory exists
 If Not FSO.FolderExists(logPath) Then
     FSO.CreateFolder(logPath)
 End If
@@ -29,7 +31,13 @@ Sub SaveLog()
     fileLogObj.Close
 End Sub
 
-Sub CopySubFolder(sourceFolder, cheminDestParent)
+Sub FatalError(message)
+    logContent = logContent & vbCrLf & "FATAL ERROR " & message
+    SaveLog()
+    WScript.Quit 1
+End Sub
+
+Sub BackupSubFolders(sourceFolder, cheminDestParent)
     For Each subFolder In sourceFolder.Subfolders
         ' Check if this subfolder is already being processed as a separate source
         If IsSubfolderAlreadyProcessed(subFolder.Path) Then
@@ -45,31 +53,86 @@ Sub CopySubFolder(sourceFolder, cheminDestParent)
                 statsFolderNew = statsFolderNew + 1
             End If
             
-            ' Copy files from the subfolder
-            For Each file In subFolder.Files
-                targetFile = targetSubFolderPath & "\" & file.Name
-                
-                ' Handle existing file (rename with date)
-                newFileVersion = PrefixExistingFile(file.Path, targetFile)
-                
-                ' Copy the new file if necessary
-                If newFileVersion Then
-                    FSO.CopyFile file.Path, targetFile
-                    logContent = logContent & "[MV] " & targetFile & vbCrLf
-                    statsFileNew = statsFileNew + 1
-                End If
-            Next
-            
-            ' Recursion for nested subfolders
-            CopySubFolder subFolder, targetSubFolderPath
+            BackupFolderFiles subFolder.Files, targetSubFolderPath
+            BackupSubFolders subFolder, targetSubFolderPath
         End If
     Next
 End Sub
 
-Sub FatalError(message)
-    logContent = logContent & vbCrLf & "FATAL ERROR " & message
-    SaveLog()
-    WScript.Quit 1
+Sub BackupFolderFiles(files, currentPath)
+    ' copy files from folder
+    For Each file In files
+        If IsGenericFilename(FSO.GetBaseName(file.Name)) Then
+            logContent = logContent & "[CHECK] " & file.Path & vbCrLf
+            statsFileInvalid = statsFileInvalid + 1
+        Else
+            targetFile = currentPath & "\" & file.Name
+
+            ' Check if the files are identical (same size and modification date)
+            If isSameFile(file.Path, targetFile) Then
+                ' Delete source file if moving and files are identical
+                If moveFiles Then
+                    logContent = logContent & "[DELETE] " & file.Path & " -> " & targetFile & vbCrLf
+                    FSO.DeleteFile file.Path
+                    statsFileDelete = statsFileDelete + 1
+                Else
+                    logContent = logContent & "[IGNORE] " & file.Path & " -> " & targetFile & vbCrLf
+                    statsFileIgnore = statsFileIgnore + 1
+                End If
+            Else
+                isAnUpdate = FSO.FileExists(targetFile)
+
+                If isAnUpdate Then 
+                    ' Keep old version
+                    KeepCopyOfPreviousFile file.Path, targetFile
+                End If
+
+                ' Copy or Move file
+                If moveFiles Then
+                    FSO.MoveFile file.Path, targetFile
+                Else
+                    FSO.CopyFile file.Path, targetFile
+                End If
+                
+                If isAnUpdate Then
+                    logContent = logContent & "[UPDATE] " & file.Path & " -> " & targetFile & vbCrLf
+                    statsFileUpdate = statsFileUpdate + 1
+                Else 
+                    logContent = logContent & "[NEW] " & file.Path & " -> " & targetFile & vbCrLf
+                    statsFileNew = statsFileNew + 1
+                End If
+            End If
+        End If
+    Next
+End Sub
+
+Sub KeepCopyOfPreviousFile(srcFile, targetFile)    
+    Dim srcFileObj, targetFileObj
+    Set srcFileObj = FSO.GetFile(srcFile)
+    Set targetFileObj = FSO.GetFile(targetFile)
+    
+    ' Different file, rename the old one with date prefix
+    Dim modDate, yearVal, monthVal, dayVal, prefixDate
+    modDate = targetFileObj.DateLastModified
+    
+    ' Format the date as YYYYMMDD
+    yearVal = Year(modDate)
+    monthVal = Right("0" & Month(modDate), 2)
+    dayVal = Right("0" & Day(modDate), 2)
+    prefixDate = yearVal & monthVal & dayVal
+    
+    ' Extract the path and file name
+    parentPath = FSO.GetParentFolderName(targetFile)
+    fileName = FSO.GetFileName(targetFile)
+    baseName = FSO.GetBaseName(fileName)
+    
+    ' Create the new name with JBCKPV prefix and date
+    newName = "JBCKPV_" & prefixDate & "_" & fileName
+    newPath = parentPath & "\" & newName
+    
+    ' Rename the old file with the versioned prefix
+    targetFileObj.Move newPath
+    logContent = logContent & "[BACKUP] " & newPath & vbCrLf
 End Sub
 
 Function PathToCamelCase(fullPath)
@@ -140,50 +203,46 @@ Function PathToCamelCase(fullPath)
     PathToCamelCase = result
 End Function
 
-Function PrefixExistingFile(srcFile, targetFile)
-    ' Returns True if the existing file was renamed, False otherwise
-    PrefixExistingFile = False
+Function IsGenericFilename(baseName)
+    ' Check if a filename uses generic non-descriptive names
+    ' Returns True if generic, False otherwise
     
-    If FSO.FileExists(targetFile) Then
+    ' Remove trailing digits to get clean base name
+    Dim cleanBaseName
+    cleanBaseName = baseName
+    Do While Len(cleanBaseName) > 0 And IsNumeric(Right(cleanBaseName, 1))
+        cleanBaseName = Left(cleanBaseName, Len(cleanBaseName) - 1)
+    Loop
+    cleanBaseName = LCase(Trim(cleanBaseName))
+    
+    ' Check against array of generic names
+    Dim i
+    For i = 0 To UBound(invalidFileNames)
+        If cleanBaseName = invalidFileNames(i) Then
+            IsGenericFilename = True
+            Exit Function
+        End If
+    Next
+    
+    IsGenericFilename = False
+End Function
+
+Function isSameFile(srcFile, targetFile)
+    Dim srcFileObj, targetFileObj
+    
+    If FSO.FileExists(srcFile) And FSO.FileExists(targetFile) Then 
         Set srcFileObj = FSO.GetFile(srcFile)
         Set targetFileObj = FSO.GetFile(targetFile)
         
         ' Check if the files are identical (same size and modification date)
         If targetFileObj.Size = srcFileObj.Size And _
             DateDiff("s", targetFileObj.DateLastModified, srcFileObj.DateLastModified) = 0 Then
-            ' Files are identical, ignore
-            logContent = logContent & "[IGNORE] " & targetFile & vbCrLf
-            statsFileIgnore = statsFileIgnore + 1
-            PrefixExistingFile = False
-            Exit Function
+            isSameFile = True
+        Else 
+            isSameFile = False
         End If
-        
-        ' Different file, rename the old one with date prefix
-        Dim modDate, year, month, day, prefixDate
-        modDate = targetFileObj.DateLastModified
-        
-        ' Format the date as YYYYMMDD
-        year = Year(modDate)
-        month = Right("0" & Month(modDate), 2)
-        day = Right("0" & Day(modDate), 2)
-        prefixDate = year & month & day
-        
-        ' Extract the path and file name
-        parentPath = FSO.GetParentFolderName(targetFile)
-        fileName = FSO.GetFileName(targetFile)
-        
-        ' Create the new name with date prefix
-        newName = prefixDate & "_" & fileName
-        newPath = parentPath & "\" & newName
-        
-        ' Rename the old file with the date
-        targetFileObj.Move newPath
-        logContent = logContent & "[BACKUP] " & targetFile & vbCrLf
-        statsFileUpdate = statsFileUpdate + 1
-        PrefixExistingFile = True
     Else
-        ' New file
-        PrefixExistingFile = True
+        isSameFile = False
     End If
 End Function
 
@@ -224,14 +283,22 @@ If Not FSO.FileExists(configPath) Then
     FatalError "Configuration file not found"
 End If
 
+' Check if invalid names configuration file exists
+If Not FSO.FileExists(invalidNamesPath) Then
+    FatalError "Invalid names file not found: " & invalidNamesPath
+End If
+
 logContent = logContent & "Parsing config file ...." & vbCrLf
 
-Dim targetPath, sourceCount
+Dim targetPath, sourceCount, moveFiles
+Dim invalidFileNames()
+ReDim invalidFileNames(0)
 Dim listeSources()
 ReDim listeSources(0)
 
 targetPath = ""
 sourceCount = 0
+moveFiles = False
 
 Set configFileObj = FSO.OpenTextFile(configPath, 1)
 
@@ -248,6 +315,10 @@ Do Until configFileObj.AtEndOfStream
             If cle = "targetPath" Then
                 If valeur <> "" Then
                     targetPath = valeur
+                End If
+            ElseIf cle = "moveFiles" Then
+                If LCase(valeur) = "1" Then
+                    moveFiles = True
                 End If
             ElseIf Left(cle, 12) = "sourceFolder" Then
                 ' Only add non-empty source folders
@@ -273,7 +344,15 @@ If targetPath = "" Then
     FatalError "Target folder not defined in the configuration file"
 End If 
 
+Dim moveFilesReadable
+If moveFiles Then
+    moveFilesReadable = "Yes"
+Else
+    moveFilesReadable = "No"
+End If
+
 logContent = logContent & "Target path: " & targetPath & vbCrLf
+logContent = logContent & "Move files: " & moveFilesReadable & vbCrLf & vbCrLf
 
 If Not FSO.DriveExists(FSO.GetDriveName(targetPath)) Then
     FatalError "Target drive is not available: " & FSO.GetDriveName(targetPath)
@@ -344,7 +423,33 @@ End If
 
 logContent = logContent & vbCrLf & "Sources: " & sourceCount & vbCrLf
 logContent = logContent & "  OK: " & sourceCountOK & vbCrLf
-logContent = logContent & "  KO: " & sourceCountKO & vbCrLf
+logContent = logContent & "  KO: " & sourceCountKO & vbCrLf & vbCrLf
+
+logContent = logContent & "Loading invalid filenames ...." & vbCrLf
+
+' Load invalid filenames from file
+Set invalidNamesFile = FSO.OpenTextFile(invalidNamesPath, 1)
+Dim invalidCount
+invalidCount = 0
+
+Do Until invalidNamesFile.AtEndOfStream
+    Dim nameLine
+    nameLine = Trim(invalidNamesFile.ReadLine)
+    
+    ' Skip empty lines and comments
+    If Len(nameLine) > 0 And Left(nameLine, 1) <> ";" And Left(nameLine, 1) <> "#" Then
+        If invalidCount = 0 Then
+            invalidFileNames(0) = LCase(nameLine)
+        Else
+            ReDim Preserve invalidFileNames(invalidCount)
+            invalidFileNames(invalidCount) = LCase(nameLine)
+        End If
+        invalidCount = invalidCount + 1
+    End If
+Loop
+invalidNamesFile.Close
+
+logContent = logContent & "  |-> " & UBound(invalidFileNames) + 1 & " invalid filename patterns" & vbCrLf & vbCrLf
 
 logContent = logContent & vbCrLf & "=-=-=-=-=-=-=-=-=-="
 logContent = logContent & vbCrLf & "||    BACKUP     ||"
@@ -352,13 +457,15 @@ logContent = logContent & vbCrLf & "=-=-=-=-=-=-=-=-=-=" & vbCrLf & vbCrLf
 
 Dim sourceFolderName, targetFolderName, targetFullPath
 Dim statsFolderNew, statsFolderSaved, statsFolderSkip
-Dim statsFileNew, statsFileUpdate, statsFileIgnore
+Dim statsFileNew, statsFileUpdate, statsFileIgnore, statsFileDelete, statsFileInvalid
 statsFolderNew = 0
 statsFolderSaved = 0
 statsFolderSkip = 0
 statsFileNew = 0
 statsFileUpdate = 0
 statsFileIgnore = 0
+statsFileDelete = 0
+statsFileInvalid = 0
 
 Dim sourceIndex
 sourceIndex = 0
@@ -398,23 +505,9 @@ For Each sourceFolder In validSources
     End If
     
     sourceIndex = sourceIndex + 1
-    ' copy files from folder
-    For Each file In folderObj.Files
-        targetFile = targetFullPath & "\" & file.Name
-        
-        ' Check for new version of the file
-        newFileVersion = PrefixExistingFile(file.Path, targetFile)
-        
-        ' Copy the new file if necessary
-        If newFileVersion Then
-            FSO.CopyFile file.Path, targetFile
-            logContent = logContent & "[NEW] " & targetFile & vbCrLf
-            statsFileNew = statsFileNew + 1
-        End If
-    Next
-    
-    ' Copy subfolders and their contents (recursive)
-    CopySubFolder folderObj, targetFullPath
+
+    BackupFolderFiles folderObj.Files, targetFullPath
+    BackupSubFolders folderObj, targetFullPath
     
     statsFolderSaved = statsFolderSaved + 1
 Next
@@ -425,7 +518,9 @@ logContent = logContent & "New folders        : " & statsFolderNew & vbCrLf
 logContent = logContent & "Skipped folders    : " & statsFolderSkip & vbCrLf
 logContent = logContent & "New files          : " & statsFileNew & vbCrLf
 logContent = logContent & "Modified files     : " & statsFileUpdate & vbCrLf
-logContent = logContent & "Ignored files      : " & statsFileIgnore & vbCrLf & vbCrLf
+logContent = logContent & "Ignored files      : " & statsFileIgnore & vbCrLf
+logContent = logContent & "Invalid files      : " & statsFileInvalid & vbCrLf
+logContent = logContent & "Deleted files      : " & statsFileDelete & vbCrLf & vbCrLf
 
 If sourceCountKO > 0 Then
     logContent = logContent & vbCrLf & "ERRORS" & vbCrLf 

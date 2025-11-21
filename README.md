@@ -21,8 +21,14 @@ A comprehensive VBScript-based backup solution with PowerShell configuration ass
 ### Logging & Monitoring
 - **Detailed UTF-8 logs**: Categorized operations with timestamps
 - **Statistics tracking**: Files copied, moved, errors, skipped folders
-- **Log categories**: `[BACKUP]`, `[IGNORE]`, `[MV]`, `[MKDIR]`, `[ERROR]`, `[INFO]`, `[SKIP]`
+- **Log categories**: `[BACKUP]`, `[IGNORE]`, `[NEW]`, `[UPDATE]`, `[MOVE/NEW]`, `[MOVE/UPDATE]`, `[DELETE]`, `[CHECK]`, `[MKDIR]`, `[ERROR]`, `[INFO]`, `[SKIP]`
 - **Log location**: `log\YYYYMMDD-HHMMSS.log`
+
+### Generic Filename Detection
+- **Automatic flagging**: Files with generic names (like `document.pdf`, `photo2.jpg`, `screenshot.png`) are flagged with `[CHECK]` in logs
+- **Customizable list**: Generic filenames defined in `invalidnames.txt`
+- **Easy maintenance**: Add or remove generic names without modifying the script
+- **Common examples**: document, image, photo, file, screenshot, download, untitled, temp
 
 ## File Structure
 
@@ -31,6 +37,7 @@ jbackup/
 ├── backup.vbs          # Main backup script (VBScript)
 ├── setup.ps1           # Interactive configuration assistant (PowerShell)
 ├── backup.ini          # Configuration file (auto-generated)
+├── invalidnames.txt    # Generic filename patterns (auto-generated)
 ├── log/                # Backup logs directory
 │   └── YYYYMMDD-HHMMSS.log
 └── README.md           # This file
@@ -84,6 +91,7 @@ jbackup/
 ```ini
 [Main]
 targetPath=C:\Backup
+moveFiles=false
 scheduleHour=12:00
 scheduleDelay=daily
 scheduleDays=Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday
@@ -93,6 +101,34 @@ sourceFolder1=C:\Users\John\Documents
 sourceFolder2=C:\Users\John\Pictures,photos
 sourceFolder3=C:\Projects\Code,projects
 ```
+
+### invalidnames.txt Structure
+
+```ini
+; Generic filenames that will be flagged for review
+; Add one filename per line (case-insensitive)
+; Lines starting with ; or # are comments
+
+document
+image
+photo
+file
+screenshot
+download
+untitled
+temp
+```
+
+This file is automatically created by `setup.ps1` with a default list of 30+ common generic filenames. You can customize it by:
+- Adding new generic patterns (one per line)
+- Removing patterns you don't want to flag
+- Using comments (`;` or `#`) for documentation
+
+**How it works:**
+- The backup script loads this file at startup
+- Files with base names matching these patterns (after removing trailing digits) are flagged with `[CHECK]` in logs
+- Example: `photo123.jpg`, `document_final.pdf`, `IMG_5678.jpg` will all be flagged
+- These files are still backed up normally, but logged for review
 
 ### Source Folder Format
 - **Without custom target**: `sourceFolder1=C:\path\to\source`
@@ -167,12 +203,33 @@ D:\My Files\Photos      → d_my_files_photos
 
 ### File Versioning
 
-When a file changes, the old version is preserved:
+When a file changes, the old version is preserved with a `JBCKPV_` prefix:
 ```
-document.txt           (current version)
-20251119_document.txt  (version from 2025-11-19)
-20251118_document.txt  (version from 2025-11-18)
+document.txt                    (current version)
+JBCKPV_20251119_document.txt    (version from 2025-11-19)
+JBCKPV_20251118_document.txt    (version from 2025-11-18)
 ```
+
+### Generic Filename Handling
+
+Files with generic names are flagged in logs but still backed up normally:
+```
+[CHECK] C:\source\document.pdf
+[NEW] C:\Backup\target\document.pdf
+```
+
+This helps you identify files that might need better naming for organization. The detection works by:
+1. Extracting the base filename (without extension)
+2. Removing trailing digits (e.g., `photo123` → `photo`)
+3. Checking against the `invalidnames.txt` list
+4. Logging with `[CHECK]` if matched
+
+Examples of files that will be flagged:
+- `document.pdf`, `document2.docx`, `document_final.xlsx`
+- `photo.jpg`, `photo123.png`, `IMG_5678.jpg`
+- `screenshot.png`, `screenshot_2024.png`
+- `download.zip`, `download(1).pdf`
+- `temp.txt`, `untitled.doc`, `new file.xlsx`
 
 ## Advanced Features
 
@@ -270,7 +327,7 @@ For issues or questions:
 
 ## Version History
 
-### Current Version
+### 1.0.0
 - Multi-folder backup support
 - Smart subfolder exclusion
 - Custom target folder mapping
@@ -280,9 +337,16 @@ For issues or questions:
 - Power management awareness
 - Queue mode for missed backups
 
-### TODO
-- Remove date prefixed duplicate files after specified period
-- Option to move or copy folders instead of copying
+### 1.0.1
+- Added JBCKPV_ prefixx to versioned files (JBCKPV_[DateYYYYMMDD]_file_name.ext)
+- Ignore files like document.pdf or photo2.jpg with an unfit name (wait for renamed files before backup)
+- Added option to move files instead of copying
+
+### TODO 
+- Option to move only once a week for example ?
 - Calculate total backup size and duration
 - Calculate disk space used by backups
 - Calculate available disk space before backup starts
+- Remove empty folders in another task cleanup.vbs
+- Remove old JBCKP files .. older than 7 days in cleanup.vbs
+

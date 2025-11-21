@@ -1,5 +1,6 @@
 $scriptPath = Join-Path $PSScriptRoot "backup.vbs"
 $configPath = Join-Path $PSScriptRoot "backup.ini"
+$invalidNamesPath = Join-Path $PSScriptRoot "invalidnames.txt"
 
 $targetPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Backup"
 $taskPath = "\JDZ\"
@@ -9,7 +10,50 @@ $scheduleHour = "12:00"
 $scheduleDelay = 'daily'
 $everyDay = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 $scheduleDays = $everyDay
+$moveFiles = $false
 $sources = @()
+
+# Function to create default invalidnames.txt file
+function New-InvalidNamesFile {
+    param([string]$FilePath)
+    
+    $defaultNames = @(
+        "; Generic filenames that will be flagged for review",
+        "; Add one filename per line (case-insensitive)",
+        "; Lines starting with ; or # are comments",
+        "",
+        "document",
+        "image",
+        "photo",
+        "file",
+        "pic",
+        "picture",
+        "img",
+        "doc",
+        "copy",
+        "dsc",
+        "screenshot",
+        "capture",
+        "snap",
+        "img_",
+        "scr",
+        "untitled",
+        "new",
+        "temp",
+        "test",
+        "draft",
+        "backup",
+        "download",
+        "attachment",
+        "video",
+        "audio",
+        "clip",
+        "scan"
+    )
+    
+    $defaultNames | Out-File -FilePath $FilePath -Encoding UTF8
+    Write-Host "Created default invalidnames.txt file" -ForegroundColor Green
+}
 
 # Function to validate and prompt for target path
 function Get-ValidTargetPath {
@@ -177,6 +221,7 @@ function Save-BackupConfig {
         [string]$ScheduleHour,
         [string]$ScheduleDelay,
         [array]$ScheduleDays,
+        [bool]$MoveFiles,
         [array]$Sources  # Array of PSCustomObjects with SourcePath and TargetFolder properties
     )
     
@@ -197,6 +242,7 @@ function Save-BackupConfig {
     $configContent = @"
 [Main]
 targetPath=$TargetPath
+moveFiles=$($MoveFiles -as [int])
 scheduleHour=$ScheduleHour
 scheduleDelay=$ScheduleDelay
 scheduleDays=$($ScheduleDays -join ',')
@@ -298,6 +344,7 @@ if (Test-Path $configPath) {
                 
                 switch ($key) {
                     "targetPath" { $targetPath = $value }
+                    "moveFiles" { $moveFiles = [int]$value -eq 1 }
                     "scheduleHour" { $scheduleHour = $value }
                     "scheduleDelay" { $scheduleDelay = $value }
                     "scheduleDays" { $scheduleDays = $value -split ',' | ForEach-Object { $_.Trim() } }
@@ -329,6 +376,16 @@ if (Test-Path $configPath) {
 }
 
 #####
+# Check if invalidnames.txt exists, create if missing
+#####
+
+if (-not (Test-Path $invalidNamesPath)) {
+    Write-Host ""
+    Write-Host "Creating default invalidnames.txt file..." -ForegroundColor Yellow
+    New-InvalidNamesFile -FilePath $invalidNamesPath
+}
+
+#####
 # prompt for settings
 #####
 
@@ -337,6 +394,12 @@ if ( $inputTargetPath ) {
     $targetPath = $inputTargetPath
 }
 $targetPath = Get-ValidTargetPath -InitialPath $targetPath
+
+$moveFilesDisplay = if ($moveFiles) { "Yes" } else { "No" }
+$inputMoveFiles = Read-Host "Move files instead of copy? (Y/N) (current: $moveFilesDisplay)"
+if ( $inputMoveFiles ) {
+    $moveFiles = ($inputMoveFiles -eq 'Y' -or $inputMoveFiles -eq 'y' -or $inputMoveFiles -eq 'yes')
+}
 
 $inputScheduleHour = Read-Host "Enter the hour of execution for the scheduled task (0 - 23) (current: $scheduleHour)"
 if ( $inputScheduleHour ) { 
@@ -347,7 +410,7 @@ $inputScheduleDelay = Read-Host "Enter the delay for the scheduled task (daily, 
 if ( $inputScheduleDelay ) { 
     $scheduleDelay = $inputScheduleDelay
 }
-if ( $inputScheduleDelay -eq 'weekly' ) {
+if ( $scheduleDelay -eq 'weekly' ) {
     $inputScheduleDays = Read-Host "Enter the days of execution for the scheduled task (e.g. Monday, Wednesday, Friday) (current: everyday)"
     if ( $inputScheduleDays ) { 
         $scheduleDays = $inputScheduleDays -split ',' | ForEach-Object { $_.Trim() }
@@ -369,6 +432,7 @@ Write-Host "Saving config to $configPath" -ForegroundColor Yellow
 
 Save-BackupConfig -ConfigPath $configPath `
     -TargetPath $targetPath `
+    -MoveFiles $moveFiles `
     -ScheduleHour $scheduleHour `
     -ScheduleDelay $scheduleDelay `
     -ScheduleDays $scheduleDays `
@@ -496,6 +560,8 @@ Write-Host "Final configuration summary:" -ForegroundColor DarkBlue
 Write-Host ""
 
 Write-Host "Target Path: $targetPath" -ForegroundColor Cyan
+$moveFilesDisplay = if ($moveFiles) { "Yes (files will be moved)" } else { "No (files will be copied)" }
+Write-Host "Move Files: $moveFilesDisplay" -ForegroundColor Cyan
 Write-Host "Schedule Hour: $scheduleHour" -ForegroundColor Cyan
 Write-Host "Schedule Delay: $scheduleDelay" -ForegroundColor Cyan
 Write-Host "Schedule Days: $($scheduleDays -join ', ')" -ForegroundColor Cyan
@@ -517,6 +583,7 @@ Write-Host "Saving config to $configPath" -ForegroundColor Yellow
 
 Save-BackupConfig -ConfigPath $configPath `
     -TargetPath $targetPath `
+    -MoveFiles $moveFiles `
     -ScheduleHour $scheduleHour `
     -ScheduleDelay $scheduleDelay `
     -ScheduleDays $scheduleDays `
@@ -536,8 +603,10 @@ if ($response -eq 'Y' -or $response -eq 'y') {
     Write-Host "Executing backup script..." -ForegroundColor Green
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$scriptPath`"" -NoNewWindow -Wait
     Write-Host "Backup script execution completed." -ForegroundColor Green
+} 
+else {
+    Write-Host "Skipping backup script execution." -ForegroundColor Yellow
 }
-Write-Host "Skipping backup script execution." -ForegroundColor Yellow
 
 Write-Host ""
 
