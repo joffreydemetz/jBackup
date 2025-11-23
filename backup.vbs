@@ -126,13 +126,49 @@ Sub KeepCopyOfPreviousFile(srcFile, targetFile)
     fileName = FSO.GetFileName(targetFile)
     baseName = FSO.GetBaseName(fileName)
     
-    ' Create the new name with JBCKPV prefix and date
-    newName = "JBCKPV_" & prefixDate & "_" & fileName
-    newPath = parentPath & "\" & newName
+    ' Calculate relative path from target root to maintain structure in .ver
+    Dim relativePath
+    relativePath = Mid(parentPath, Len(targetPath) + 2) ' +2 to skip leading backslash
     
-    ' Rename the old file with the versioned prefix
+    ' Create .ver directory structure
+    Dim verRootPath, verFilePath
+    verRootPath = targetPath & "\.ver"
+    If Not FSO.FolderExists(verRootPath) Then
+        FSO.CreateFolder(verRootPath)
+        logContent = logContent & "[MKDIR] " & verRootPath & vbCrLf
+    End If
+    
+    ' Create subdirectory in .ver if needed
+    If relativePath <> "" Then
+        verFilePath = verRootPath & "\" & relativePath
+        If Not FSO.FolderExists(verFilePath) Then
+            ' Create directory recursively
+            CreateDirectoryRecursive verFilePath
+        End If
+    Else
+        verFilePath = verRootPath
+    End If
+    
+    ' Create the new name with date prefix only
+    newName = prefixDate & "_" & fileName
+    newPath = verFilePath & "\" & newName
+    
+    ' Move the old file to .ver directory
     targetFileObj.Move newPath
     logContent = logContent & "[BACKUP] " & newPath & vbCrLf
+End Sub
+
+Sub CreateDirectoryRecursive(dirPath)
+    ' Create directory recursively if it doesn't exist
+    If Not FSO.FolderExists(dirPath) Then
+        Dim parentDir
+        parentDir = FSO.GetParentFolderName(dirPath)
+        If Not FSO.FolderExists(parentDir) Then
+            CreateDirectoryRecursive parentDir
+        End If
+        FSO.CreateFolder(dirPath)
+        logContent = logContent & "[MKDIR] " & dirPath & vbCrLf
+    End If
 End Sub
 
 Function PathToCamelCase(fullPath)

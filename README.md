@@ -6,7 +6,7 @@ A comprehensive VBScript-based backup solution with PowerShell configuration ass
 
 ### Core Functionality
 - **Multi-folder backup**: Back up multiple source folders to a centralized target directory
-- **File versioning**: Preserves old file versions with YYYYMMDD_ prefix when files change
+- **File versioning**: Preserves old file versions with YYYYMMDD_ prefix in `.ver` directory (3 versions max)
 - **Smart comparison**: Only copies files that have changed (size + date modified)
 - **Subfolder exclusion**: Automatically skips subfolders that are configured as separate backup sources
 - **Custom target mapping**: Specify custom target subfolder names or use auto-generated names
@@ -35,11 +35,13 @@ A comprehensive VBScript-based backup solution with PowerShell configuration ass
 ```
 jbackup/
 ├── backup.vbs          # Main backup script (VBScript)
+├── cleanup.vbs         # Version cleanup script (VBScript)
 ├── setup.ps1           # Interactive configuration assistant (PowerShell)
 ├── backup.ini          # Configuration file (auto-generated)
 ├── invalidnames.txt    # Generic filename patterns (auto-generated)
 ├── log/                # Backup logs directory
 │   └── YYYYMMDD-HHMMSS.log
+│   └── YYYYMMDD-HHMMSS-cleanup.log
 └── README.md           # This file
 ```
 
@@ -147,25 +149,43 @@ wscript.exe backup.vbs
 Or double-click `backup.vbs` in Windows Explorer.
 
 ### Scheduled Execution
-The setup script automatically creates a scheduled task that runs:
+The setup script automatically creates two scheduled tasks:
+
+**jBackup** - Main backup task that runs:
 - **Daily** at the configured time (default: 12:00)
 - **At startup** (5 minutes after system boots)
 
+**jBackupCleanup** - Version cleanup task that runs:
+- **Daily** at 2:00 AM
+- Maintains the 3-version limit for all backed up files
+- Removes old versions automatically
+
 ### Task Management
 
-**View task details**:
+**View backup task details**:
 ```powershell
 Get-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackup'
 ```
 
-**Start task manually**:
+**Start backup task manually**:
 ```powershell
 Start-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackup'
 ```
 
-**Remove task**:
+**View cleanup task details**:
+```powershell
+Get-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackupCleanup'
+```
+
+**Start cleanup task manually**:
+```powershell
+Start-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackupCleanup'
+```
+
+**Remove tasks**:
 ```powershell
 Unregister-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackup' -Confirm:$false
+Unregister-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackupCleanup' -Confirm:$false
 ```
 
 ## How It Works
@@ -180,7 +200,7 @@ Unregister-ScheduledTask -TaskPath '\JDZ\' -TaskName 'jBackup' -Confirm:$false
    - **For each file**:
      - Check if file exists in target
      - Compare size and date modified
-     - If changed: Rename old file with YYYYMMDD_ prefix, copy new version
+     - If changed: Move old file to `.ver` directory with YYYYMMDD_ prefix, copy new version
      - If new: Copy directly
    - **For each subfolder**:
      - Skip if subfolder is configured as separate source
@@ -203,12 +223,20 @@ D:\My Files\Photos      → d_my_files_photos
 
 ### File Versioning
 
-When a file changes, the old version is preserved with a `JBCKPV_` prefix:
+When a file changes, the old version is preserved in a `.ver` directory at the backup root with a date prefix (YYYYMMDD):
 ```
-document.txt                    (current version)
-JBCKPV_20251119_document.txt    (version from 2025-11-19)
-JBCKPV_20251118_document.txt    (version from 2025-11-18)
+C:\Backup\documents\document.txt                 (current version)
+C:\Backup\.ver\documents\20251119_document.txt    (version from 2025-11-19)
+C:\Backup\.ver\documents\20251118_document.txt    (version from 2025-11-18)
 ```
+
+**Version Management:**
+- Versioned files are stored in `C:\Backup\.ver\` directory
+- Directory structure mirrors the backup structure (e.g., `.ver\documents\`, `.ver\photos\`)
+- Only the 3 most recent versions are kept per file
+- Cleanup runs automatically daily at 2:00 AM via `jBackupCleanup` task
+- Manual cleanup: run `cleanup.vbs` or start the cleanup task
+- Log entries show `[DELETE]` when old versions are removed
 
 ### Generic Filename Handling
 
@@ -225,11 +253,7 @@ This helps you identify files that might need better naming for organization. Th
 4. Logging with `[CHECK]` if matched
 
 Examples of files that will be flagged:
-- `document.pdf`, `document2.docx`, `document_final.xlsx`
-- `photo.jpg`, `photo123.png`, `IMG_5678.jpg`
-- `screenshot.png`, `screenshot_2024.png`
-- `download.zip`, `download(1).pdf`
-- `temp.txt`, `untitled.doc`, `new file.xlsx`
+- `document.pdf`, `document2.docx`, `photo.jpg`, `photo123.png`, `IMG_5678.jpg`, `screenshot.png`, `screenshot_2024.png`, `new.zip`, `new file.xlsx`, `temp.txt`, `untitled.doc`
 
 ## Advanced Features
 
@@ -338,15 +362,19 @@ For issues or questions:
 - Queue mode for missed backups
 
 ### 1.0.1
-- Added JBCKPV_ prefixx to versioned files (JBCKPV_[DateYYYYMMDD]_file_name.ext)
-- Ignore files like document.pdf or photo2.jpg with an unfit name (wait for renamed files before backup)
+- Added JBCKPV_ prefix to versioned files (JBCKPV_[YYYYMMDD]_filename.ext) to avoid conflict with files already prefixed by a date
+- Manage invalid filenames ignoring files like document.pdf or photo2.jpg (wait for file to be renamed before backing it up)
 - Added option to move files instead of copying
 
+### 1.0.2
+- Changed versioning logic.. Versioned files now stored in `.ver` directory at backup root (keeps current backups clean)
+- Simplified version prefix to date only (YYYYMMDD_filename.ext)
+- Added cleanup.vbs script to remove old versions (3 version limit)
+- Created jBackupCleanup scheduled task to run cleanup.vbs daily at 2:00 PM
+- Added empty folder removal in cleanup task (removes empty directories after version cleanup)
+
 ### TODO 
-- Option to move only once a week for example ?
 - Calculate total backup size and duration
 - Calculate disk space used by backups
 - Calculate available disk space before backup starts
-- Remove empty folders in another task cleanup.vbs
-- Remove old JBCKP files .. older than 7 days in cleanup.vbs
 
