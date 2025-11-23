@@ -1,12 +1,19 @@
-$scriptPath = Join-Path $PSScriptRoot "backup.vbs"
 $configPath = Join-Path $PSScriptRoot "backup.ini"
 $invalidNamesPath = Join-Path $PSScriptRoot "invalidnames.txt"
 
 $targetPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Backup"
 $taskPath = "\JDZ\"
+
+# backup task settings
+$backupScriptPath = Join-Path $PSScriptRoot "backup.vbs"
 $taskName = "jBackup"
-$taskDesc = "Automatic daily backup."
 $scheduleHour = "12:00"
+
+# cleanup task settings
+$cleanupScriptPath = Join-Path $PSScriptRoot "cleanup.vbs"
+$cleanupTaskName = "jBackupCleanup"
+$cleanupScheduleHour = "14:00"  # 2 hours after backup
+
 $scheduleDelay = 'daily'
 $everyDay = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 $scheduleDays = $everyDay
@@ -32,13 +39,14 @@ function New-InvalidNamesFile {
         "doc",
         "copy",
         "dsc",
+        "dsc_",
         "screenshot",
         "capture",
         "snap",
+        "img",
         "img_",
         "scr",
         "untitled",
-        "new",
         "temp",
         "test",
         "draft",
@@ -48,7 +56,9 @@ function New-InvalidNamesFile {
         "video",
         "audio",
         "clip",
-        "scan"
+        "scan",
+        "new",
+        "new file"
     )
     
     $defaultNames | Out-File -FilePath $FilePath -Encoding UTF8
@@ -261,7 +271,7 @@ Write-Host "           _                _               " -ForegroundColor DarkG
 Write-Host "          | |              | |              " -ForegroundColor DarkGreen
 Write-Host "       _  | |__   __ _  ___| | ___   _ ___  " -ForegroundColor DarkGreen
 Write-Host "      |_| |  _ \ / _  |/ __| |/ / | | | O | " -ForegroundColor DarkRed
-Write-Host "       _  | |_) | (_| | (__|   <| |_| | __| " -ForegroundColor DarkRed
+Write-Host "       _  | |_| | (_| | (__|   <| |_| | __| " -ForegroundColor DarkRed
 Write-Host "      | | |____/ \__,_|\___|_|\_\\__,_|_|   " -ForegroundColor DarkRed
 Write-Host "  _   | |                                   " -ForegroundColor DarkMagenta
 Write-Host " | |__| |                                   " -ForegroundColor DarkMagenta
@@ -271,38 +281,68 @@ Write-Host ""
 Write-Host ""
 Write-Host "This script configures an automatic backup system that:" -ForegroundColor Cyan
 Write-Host "  - Backs up multiple source folders to a target directory" -ForegroundColor White
-Write-Host "  - Creates a Windows scheduled task for automatic execution" -ForegroundColor White
+Write-Host "  - Creates TWO Windows scheduled tasks (backup + cleanup)" -ForegroundColor White
 Write-Host "  - Runs daily at a specified time AND 5 minutes after system startup" -ForegroundColor White
 Write-Host "  - Waits for AC power to start, but continues if unplugged during backup" -ForegroundColor White
-Write-Host "  - Preserves old file versions with YYYYMMDD_ prefix when files change" -ForegroundColor White
+Write-Host "  - Preserves old file versions in .ver directory with YYYYMMDD_ prefix" -ForegroundColor White
+Write-Host "  - Keeps only 3 most recent versions per file (cleaned daily at 2 AM)" -ForegroundColor White
+Write-Host "  - Supports both COPY and MOVE modes for file operations" -ForegroundColor White
 Write-Host "  - Skips identical files to save time and space" -ForegroundColor White
+Write-Host "  - Detects generic filenames for review (document1, image2, etc.)" -ForegroundColor White
 Write-Host "  - Logs all operations with detailed statistics" -ForegroundColor White
 Write-Host ""
 Write-Host "CONFIGURATION OPTIONS:" -ForegroundColor Yellow
 Write-Host "  Target Path    : Root backup destination folder (default: $targetPath)" -ForegroundColor White
 Write-Host "  Source Folders : Multiple folders to backup (with optional target subfolders)" -ForegroundColor White
-Write-Host "  Execution Time : Hour of daily execution (default: $scheduleHour)" -ForegroundColor White
+Write-Host "  File Operation : Copy or Move files to backup (default: Copy)" -ForegroundColor White
+Write-Host "  Execution Time : Hour of daily backup (default: $scheduleHour)" -ForegroundColor White
 Write-Host "  Schedule       : Daily or Weekly execution (default: $scheduleDelay)" -ForegroundColor White
 Write-Host "  Schedule days  : When weekly sync specify the day(s) (default: $($scheduleDays -join ', '))" -ForegroundColor White
+Write-Host "  Cleanup Task   : Daily at 2:00 PM (keeps 3 versions per file)" -ForegroundColor White
 Write-Host ""
 Write-Host "ADVANCED FEATURES:" -ForegroundColor Yellow
+Write-Host "  - Version management in .ver directory (3 versions per file maximum)" -ForegroundColor White
+Write-Host "  - Generic filename detection from invalidnames.txt (warns about document1, etc.)" -ForegroundColor White
 Write-Host "  - Smart subfolder exclusion (skips subfolders already configured separately)" -ForegroundColor White
-Write-Host "  - Target subfolder mapping (format: 'source,targetSubfolder')" -ForegroundColor White
-Write-Host "  - Automatic target folder name generation from source path" -ForegroundColor White
+Write-Host "  - Target subfolder mapping with auto-generation (format: 'source,targetSubfolder')" -ForegroundColor White
+Write-Host "  - Smart file comparison (size + modification date)" -ForegroundColor White
 Write-Host "  - Queue mode for catching up missed backups" -ForegroundColor White
 Write-Host "  - Waits for AC power before starting (but won't interrupt if power is lost)" -ForegroundColor White
+Write-Host "  - UTF-8 logging with categories (NEW, UPDATE, MOVE, DELETE, etc.)" -ForegroundColor White
 Write-Host ""
 Write-Host "Press Enter to begin configuration..." -ForegroundColor Green
 $null = Read-Host
 
-$existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($existingTask) {
-    Write-Host "Removing existing task ..." -ForegroundColor Yellow
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+try {
+    $existingTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Write-Host "Removing existing backup task ..." -ForegroundColor Yellow
+        Unregister-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Confirm:$false
+    }
+}
+catch {
+    # Task doesn't exist, continue
 }
 
-if (-not (Test-Path $scriptPath)) {
+# Remove existing cleanup task if it exists
+try {
+    $existingCleanupTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $cleanupTaskName -ErrorAction SilentlyContinue
+    if ($existingCleanupTask) {
+        Write-Host "Removing existing cleanup task..." -ForegroundColor Yellow
+        Unregister-ScheduledTask -TaskPath $taskPath -TaskName $cleanupTaskName -Confirm:$false
+    }
+}
+catch {
+    # Task doesn't exist, continue
+}
+
+if (-not (Test-Path $backupScriptPath)) {
     Write-Host "FATAL ERROR: backup.vbs not found in current directory" -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $cleanupScriptPath)) {
+    Write-Host "FATAL ERROR: cleanup.vbs not found in current directory" -ForegroundColor Yellow
     exit 1
 }
 
@@ -426,6 +466,8 @@ else {
     $scheduleDelay = 'daily'
     $scheduleDays = $everyDay
 }
+$cleanupScheduleHour = (Get-Date $scheduleHour).AddHours(2).ToString("HH:mm")
+
 
 # update config file
 Write-Host "Saving config to $configPath" -ForegroundColor Yellow
@@ -562,9 +604,10 @@ Write-Host ""
 Write-Host "Target Path: $targetPath" -ForegroundColor Cyan
 $moveFilesDisplay = if ($moveFiles) { "Yes (files will be moved)" } else { "No (files will be copied)" }
 Write-Host "Move Files: $moveFilesDisplay" -ForegroundColor Cyan
-Write-Host "Schedule Hour: $scheduleHour" -ForegroundColor Cyan
-Write-Host "Schedule Delay: $scheduleDelay" -ForegroundColor Cyan
-Write-Host "Schedule Days: $($scheduleDays -join ', ')" -ForegroundColor Cyan
+Write-Host "Backup Hour: $scheduleHour" -ForegroundColor Cyan
+Write-Host "Cleanup Hour: $cleanupScheduleHour" -ForegroundColor Cyan
+Write-Host "Backup Delay: $scheduleDelay" -ForegroundColor Cyan
+Write-Host "Backup Days: $($scheduleDays -join ', ')" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Source Folders:" -ForegroundColor Cyan
 foreach ($source in $sources) {
@@ -601,7 +644,7 @@ Write-Host ""
 $response = Read-Host "Do you want to run the backup now? (Y/N)"
 if ($response -eq 'Y' -or $response -eq 'y') {
     Write-Host "Executing backup script..." -ForegroundColor Green
-    Start-Process -FilePath "wscript.exe" -ArgumentList "`"$scriptPath`"" -NoNewWindow -Wait
+    Start-Process -FilePath "wscript.exe" -ArgumentList "`"$backupScriptPath`"" -NoNewWindow -Wait
     Write-Host "Backup script execution completed." -ForegroundColor Green
 } 
 else {
@@ -610,14 +653,8 @@ else {
 
 Write-Host ""
 
-$scriptPath = (Resolve-Path $scriptPath).Path
+$backupScriptPath = (Resolve-Path $backupScriptPath).Path
 
-Write-Host "Script ........................... $scriptPath" -ForegroundColor Cyan
-Write-Host "Task Path ........................ $taskPath" -ForegroundColor Cyan
-Write-Host "Task Name ........................ $taskName" -ForegroundColor Cyan
-Write-Host "Schedule Hour .................... $scheduleHour" -ForegroundColor Cyan
-Write-Host "Schedule Delay ................... $scheduleDelay" -ForegroundColor Cyan
-Write-Host "Schedule Days .................... $($scheduleDays -join ', ')" -ForegroundColor Cyan
 Write-Host "Start if on batteries ............ No" -ForegroundColor Cyan
 Write-Host "Stop if going on batteries ....... No" -ForegroundColor Cyan
 Write-Host "Start when available ............. Yes" -ForegroundColor Cyan
@@ -626,14 +663,18 @@ Write-Host "Mandatory use login .............. No" -ForegroundColor Cyan
 Write-Host "Run multiple instances ........... No" -ForegroundColor Cyan
 Write-Host "Catch up missed backups .......... Yes" -ForegroundColor Cyan
 Write-Host "Startup delay .................... 5 minutes" -ForegroundColor Cyan
-Write-Host "Description ...................... Automatic daily backup." -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "Setting up action..." -ForegroundColor Green
-    
-$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$scriptPath`"" -WorkingDirectory $PSScriptRoot
+Write-Host "Creating backup task..." -ForegroundColor Green
+Write-Host "Task Path ........................ $taskPath" -ForegroundColor Cyan
+Write-Host "Task Name ........................ $taskName" -ForegroundColor Cyan
+Write-Host "Backup Hour ...................... $scheduleHour" -ForegroundColor Cyan
+Write-Host "Backup Delay ..................... $scheduleDelay" -ForegroundColor Cyan
+Write-Host "Backup Days ...................... $($scheduleDays -join ', ')" -ForegroundColor Cyan
+Write-Host "Script ........................... $backupScriptPath" -ForegroundColor Cyan
 
-Write-Host "Setting up triggers..." -ForegroundColor Green
+# Create the scheduled task action
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$backupScriptPath`"" -WorkingDirectory $PSScriptRoot
 
 if ( $scheduleDelay -eq 'weekly' ) {
     $trigger1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $scheduleDays -At "$scheduleHour"
@@ -655,9 +696,6 @@ $settings = New-ScheduledTaskSettingsSet `
 
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
 
-Write-Host ""
-Write-Host "Registering task..." -ForegroundColor DarkBlue
-
 Register-ScheduledTask `
     -TaskPath $taskPath `
     -TaskName $taskName `
@@ -665,25 +703,78 @@ Register-ScheduledTask `
     -Trigger $trigger1, $trigger2 `
     -Settings $settings `
     -Principal $principal `
-    -Description $taskDesc
+    -Description "Automatic backup."
 
 Write-Host ""
 Write-Host "Task created successfully!" -ForegroundColor Green
 Write-Host "  Get-ScheduledTask -TaskPath '$taskPath' -TaskName '$taskName'" -ForegroundColor White
 Write-Host "  Start-ScheduledTask -TaskPath '$taskPath' -TaskName '$taskName'" -ForegroundColor White
 Write-Host "  Unregister-ScheduledTask -TaskPath '$taskPath' -TaskName '$taskName' -Confirm:`$false" -ForegroundColor White
-Write-Host ""
 
-# Afficher les prochaines exécutions
-Start-Sleep -Seconds 1  # Attendre que la tâche soit complètement enregistrée
+# Display next run time
+Start-Sleep -Seconds 1
 try {
     $taskInfo = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-    Write-Host "Next scheduled run: $($taskInfo.NextRunTime)"
+    Write-Host "  Next scheduled run: $($taskInfo.NextRunTime)"
 }
 catch {
-    Write-Host "Task registered successfully but info not yet available." -ForegroundColor Yellow
-    Write-Host "Run 'Get-ScheduledTaskInfo -TaskPath ""$taskPath"" -TaskName ""$taskName""' to see details later." -ForegroundColor Yellow
+    Write-Host "  Task registered successfully but info not yet available." -ForegroundColor Yellow
+    Write-Host "  Run 'Get-ScheduledTaskInfo -TaskPath ""$taskPath"" -TaskName ""$taskName""' to see details later." -ForegroundColor Yellow
 }
+Write-Host ""
 
-Write-Host "`nALL DONE" -ForegroundColor Green
-exit 1
+
+#####
+# Setup cleanup task
+#####
+
+Write-Host "Creating cleanup task to maintain version history..." -ForegroundColor Green
+Write-Host "Task path ........................ $taskPath" -ForegroundColor Cyan
+Write-Host "Task name ........................ $cleanupTaskName" -ForegroundColor Cyan
+Write-Host "Cleanup Hour ..................... $cleanupScheduleHour" -ForegroundColor Cyan
+Write-Host "Cleanup Days ..................... Everyday" -ForegroundColor Cyan
+Write-Host "Script ........................... $cleanupScriptPath" -ForegroundColor Cyan
+
+$cleanupAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$cleanupScriptPath`"" -WorkingDirectory $PSScriptRoot
+
+$cleanupTrigger = New-ScheduledTaskTrigger -Daily -At "$cleanupScheduleHour"
+
+$cleanupSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries:$false `
+    -DontStopIfGoingOnBatteries:$true `
+    -StartWhenAvailable:$true `
+    -RunOnlyIfNetworkAvailable:$false `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
+    -MultipleInstances Queue
+
+$cleanupPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
+
+Register-ScheduledTask `
+    -TaskPath $taskPath `
+    -TaskName $cleanupTaskName `
+    -Action $cleanupAction `
+    -Trigger $cleanupTrigger `
+    -Settings $cleanupSettings `
+    -Principal $cleanupPrincipal `
+    -Description "Cleanup old backup versions (keep 3 most recent per file)"
+
+Write-Host ""
+Write-Host "Cleanup task created successfully!" -ForegroundColor Green
+Write-Host "  Get-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
+Write-Host "  Start-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
+Write-Host "  Unregister-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName' -Confirm:`$false" -ForegroundColor White
+
+# Display next run time
+Start-Sleep -Seconds 1
+try {
+    $taskInfo = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $cleanupTaskName -ErrorAction Stop
+    Write-Host "  Next scheduled run: $($taskInfo.NextRunTime)"
+}
+catch {
+    Write-Host "  Task registered successfully but info not yet available." -ForegroundColor Yellow
+    Write-Host "  Run 'Get-ScheduledTaskInfo -TaskPath ""$taskPath"" -TaskName ""$cleanupTaskName""' to see details later." -ForegroundColor Yellow
+}
+Write-Host ""
+
+Write-Host "SETUP COMPLETE" -ForegroundColor Green
+exit 0
