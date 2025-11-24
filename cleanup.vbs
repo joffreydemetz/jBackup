@@ -123,6 +123,30 @@ Sub RemoveEmptyFolders(folderPath)
     End If
 End Sub
 
+Sub CleanOldLogFiles()
+    ' Remove log files older than 30 days
+    Dim logFolder, logFile, cutoffDate, daysOld
+    
+    If Not FSO.FolderExists(logPath) Then
+        Exit Sub
+    End If
+    
+    Set logFolder = FSO.GetFolder(logPath)
+    cutoffDate = DateAdd("d", -30, Now)
+    
+    For Each logFile In logFolder.Files
+        ' Check if it's a log file (.log extension)
+        If LCase(FSO.GetExtensionName(logFile.Name)) = "log" Then
+            If logFile.DateLastModified < cutoffDate Then
+                daysOld = DateDiff("d", logFile.DateLastModified, Now)
+                FSO.DeleteFile logFile.Path
+                logContent = logContent & "[DELETE_LOG] " & logFile.Name & " (age: " & daysOld & " days)" & vbCrLf
+                statsLogsDeleted = statsLogsDeleted + 1
+            End If
+        End If
+    Next
+End Sub
+
 Sub CleanVersionDirectory(verPath)
     ' Recursively clean all subdirectories in .ver folder
     Dim verFolder, subFolder, file, filesDict, uniqueFiles
@@ -227,9 +251,10 @@ logContent = logContent & vbCrLf & "=-=-=-=-=-=-=-=-=-="
 logContent = logContent & vbCrLf & "||    CLEANUP    ||"
 logContent = logContent & vbCrLf & "=-=-=-=-=-=-=-=-=-=" & vbCrLf & vbCrLf
 
-Dim statsFilesDeleted, statsFoldersDeleted
+Dim statsFilesDeleted, statsFoldersDeleted, statsLogsDeleted
 statsFilesDeleted = 0
 statsFoldersDeleted = 0
+statsLogsDeleted = 0
 
 ' Clean version directory
 logContent = logContent & "Cleaning version directory: " & verRootPath & vbCrLf
@@ -238,9 +263,13 @@ CleanVersionDirectory verRootPath
 logContent = logContent & vbCrLf & "Removing empty folders..." & vbCrLf
 RemoveEmptyFolders verRootPath
 
+logContent = logContent & vbCrLf & "Cleaning old log files (older than 30 days)..." & vbCrLf
+CleanOldLogFiles
+
 logContent = logContent & vbCrLf & "===== STATISTICS =====" & vbCrLf
 logContent = logContent & "Deleted old versions: " & statsFilesDeleted & vbCrLf
-logContent = logContent & "Removed empty folders: " & statsFoldersDeleted & vbCrLf & vbCrLf
+logContent = logContent & "Removed empty folders: " & statsFoldersDeleted & vbCrLf
+logContent = logContent & "Deleted old log files: " & statsLogsDeleted & vbCrLf & vbCrLf
 
 logContent = logContent & vbCrLf & "SUCCESS" & vbCrLf
 logContent = logContent & "Cleanup completed at: " & Now & vbCrLf

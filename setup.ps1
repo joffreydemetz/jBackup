@@ -734,6 +734,7 @@ Write-Host "Task name ........................ $cleanupTaskName" -ForegroundColo
 Write-Host "Cleanup Hour ..................... $cleanupScheduleHour" -ForegroundColor Cyan
 Write-Host "Cleanup Days ..................... Everyday" -ForegroundColor Cyan
 Write-Host "Script ........................... $cleanupScriptPath" -ForegroundColor Cyan
+Write-Host ""
 
 $cleanupAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$cleanupScriptPath`"" -WorkingDirectory $PSScriptRoot
 
