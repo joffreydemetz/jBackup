@@ -21,8 +21,9 @@ A comprehensive VBScript-based backup solution with PowerShell configuration ass
 ### Logging & Monitoring
 - **Detailed UTF-8 logs**: Categorized operations with timestamps
 - **Statistics tracking**: Files copied, moved, errors, skipped folders
-- **Log categories**: `[BACKUP]`, `[IGNORE]`, `[NEW]`, `[UPDATE]`, `[MOVE/NEW]`, `[MOVE/UPDATE]`, `[DELETE]`, `[CHECK]`, `[MKDIR]`, `[ERROR]`, `[INFO]`, `[SKIP]`
+- **Log categories**: `[BACKUP]`, `[IGNORE]`, `[NEW]`, `[UPDATE]`, `[MOVE/NEW]`, `[MOVE/UPDATE]`, `[DELETE]`, `[CHECK]`, `[TEMP]`, `[MKDIR]`, `[ERROR]`, `[INFO]`, `[SKIP]`
 - **Log location**: `log\YYYYMMDD-HHMMSS.log`
+- **Temporary file filtering**: Automatically skips temp files (Office ~$, .crdownload, .part, .tmp, .bak, etc.)
 
 ### Generic Filename Detection
 - **Automatic flagging**: Files with generic names (like `document.pdf`, `photo2.jpg`, `screenshot.png`) are flagged with `[CHECK]` in logs
@@ -380,7 +381,8 @@ For issues or questions:
 - Added total backup size calculation
 - Added backup growth tracking
 - Added data transfer statistics (bytes backed up per session)
+- Added temporary file filtering (skips office temp files, temp downloads, thumbs.db, desktop.ini, etc.)
 
 ### TODO 
-- ignore temporary files (.~, *.crdownload, etc)
+- Nothing planned
 
