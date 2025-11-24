@@ -37,6 +37,72 @@ Sub FatalError(message)
     WScript.Quit 1
 End Sub
 
+Function GetDriveSpace(drivePath)
+    ' Returns available space on drive in bytes
+    Dim drive
+    Set drive = FSO.GetDrive(FSO.GetDriveName(drivePath))
+    GetDriveSpace = drive.AvailableSpace
+End Function
+
+Function FormatBytes(bytes)
+    ' Format bytes to human-readable format
+    Dim result
+    If bytes >= 1073741824 Then ' 1 GB
+        result = FormatNumber(bytes / 1073741824, 2) & " GB"
+    ElseIf bytes >= 1048576 Then ' 1 MB
+        result = FormatNumber(bytes / 1048576, 2) & " MB"
+    ElseIf bytes >= 1024 Then ' 1 KB
+        result = FormatNumber(bytes / 1024, 2) & " KB"
+    Else
+        result = bytes & " bytes"
+    End If
+    FormatBytes = result
+End Function
+
+Function GetFolderSize(folderPath)
+    ' Recursively calculate folder size in bytes
+    Dim folder, file, subFolder, totalSize
+    totalSize = 0
+    
+    If Not FSO.FolderExists(folderPath) Then
+        GetFolderSize = 0
+        Exit Function
+    End If
+    
+    Set folder = FSO.GetFolder(folderPath)
+    
+    ' Add file sizes
+    For Each file In folder.Files
+        totalSize = totalSize + file.Size
+    Next
+    
+    ' Add subfolder sizes recursively
+    For Each subFolder In folder.SubFolders
+        totalSize = totalSize + GetFolderSize(subFolder.Path)
+    Next
+    
+    GetFolderSize = totalSize
+End Function
+
+Function FormatDuration(seconds)
+    ' Format duration in seconds to human-readable format
+    Dim hours, minutes, secs, result
+    hours = Int(seconds / 3600)
+    minutes = Int((seconds Mod 3600) / 60)
+    secs = seconds Mod 60
+    
+    result = ""
+    If hours > 0 Then
+        result = hours & "h "
+    End If
+    If minutes > 0 Or hours > 0 Then
+        result = result & minutes & "m "
+    End If
+    result = result & secs & "s"
+    
+    FormatDuration = result
+End Function
+
 Sub BackupSubFolders(sourceFolder, cheminDestParent)
     For Each subFolder In sourceFolder.Subfolders
         ' Check if this subfolder is already being processed as a separate source
@@ -80,25 +146,29 @@ Sub BackupFolderFiles(files, currentPath)
                     statsFileIgnore = statsFileIgnore + 1
                 End If
             Else
+                srcFile = file.Path
                 isAnUpdate = FSO.FileExists(targetFile)
+                
+                ' Track bytes backed up
+                statsTotalBytes = statsTotalBytes + file.Size
 
                 If isAnUpdate Then 
                     ' Keep old version
-                    KeepCopyOfPreviousFile file.Path, targetFile
+                    KeepCopyOfPreviousFile srcFile, targetFile
                 End If
 
                 ' Copy or Move file
                 If moveFiles Then
-                    FSO.MoveFile file.Path, targetFile
+                    FSO.MoveFile srcFile, targetFile
                 Else
-                    FSO.CopyFile file.Path, targetFile
+                    FSO.CopyFile srcFile, targetFile
                 End If
                 
                 If isAnUpdate Then
-                    logContent = logContent & "[UPDATE] " & file.Path & " -> " & targetFile & vbCrLf
+                    logContent = logContent & "[UPDATE] " & srcFile & " -> " & targetFile & vbCrLf
                     statsFileUpdate = statsFileUpdate + 1
                 Else 
-                    logContent = logContent & "[NEW] " & file.Path & " -> " & targetFile & vbCrLf
+                    logContent = logContent & "[NEW] " & srcFile & " -> " & targetFile & vbCrLf
                     statsFileNew = statsFileNew + 1
                 End If
             End If
@@ -154,6 +224,13 @@ Sub KeepCopyOfPreviousFile(srcFile, targetFile)
     newPath = verFilePath & "\" & newName
     
     ' Move the old file to .ver directory
+    ' Check if a version with today's date already exists (useful for dev/testing)
+    If FSO.FileExists(newPath) Then
+        ' Delete existing version from today and replace it
+        FSO.DeleteFile newPath
+        logContent = logContent & "[DELETE] " & newPath & " (replacing with newer version)" & vbCrLf
+    End If
+    
     targetFileObj.Move newPath
     logContent = logContent & "[BACKUP] " & newPath & vbCrLf
 End Sub
@@ -398,6 +475,18 @@ If Not FSO.FolderExists(targetPath) Then
     FatalError "Target path does not exist: " & targetPath
 End If
 
+' Check available disk space
+Dim availableSpaceBefore, backupSizeBefore
+availableSpaceBefore = GetDriveSpace(targetPath)
+backupSizeBefore = GetFolderSize(targetPath)
+
+logContent = logContent & "Available disk space: " & FormatBytes(availableSpaceBefore) & vbCrLf
+logContent = logContent & "Current backup size: " & FormatBytes(backupSizeBefore) & vbCrLf & vbCrLf
+
+' Start timing
+Dim startTime, endTime, duration
+startTime = Timer
+
 ' check sources
 If sourceCount = 0 Then
     FatalError "No sources defined in the configuration file" & vbCrLf
@@ -502,6 +591,7 @@ statsFileUpdate = 0
 statsFileIgnore = 0
 statsFileDelete = 0
 statsFileInvalid = 0
+statsTotalBytes = 0
 
 Dim sourceIndex
 sourceIndex = 0
@@ -548,7 +638,22 @@ For Each sourceFolder In validSources
     statsFolderSaved = statsFolderSaved + 1
 Next
 
+' Calculate duration and final statistics
+endTime = Timer
+If endTime < startTime Then
+    ' Handle midnight rollover
+    duration = (86400 - startTime) + endTime
+Else
+    duration = endTime - startTime
+End If
+
+Dim availableSpaceAfter, backupSizeAfter, backupGrowth
+availableSpaceAfter = GetDriveSpace(targetPath)
+backupSizeAfter = GetFolderSize(targetPath)
+backupGrowth = backupSizeAfter - backupSizeBefore
+
 logContent = logContent & vbCrLf & "===== STATISTICS =====" & vbCrLf
+logContent = logContent & "Duration           : " & FormatDuration(Int(duration)) & vbCrLf
 logContent = logContent & "Processed folders  : " & statsFolderSaved & vbCrLf
 logContent = logContent & "New folders        : " & statsFolderNew & vbCrLf
 logContent = logContent & "Skipped folders    : " & statsFolderSkip & vbCrLf
@@ -556,7 +661,11 @@ logContent = logContent & "New files          : " & statsFileNew & vbCrLf
 logContent = logContent & "Modified files     : " & statsFileUpdate & vbCrLf
 logContent = logContent & "Ignored files      : " & statsFileIgnore & vbCrLf
 logContent = logContent & "Invalid files      : " & statsFileInvalid & vbCrLf
-logContent = logContent & "Deleted files      : " & statsFileDelete & vbCrLf & vbCrLf
+logContent = logContent & "Deleted files      : " & statsFileDelete & vbCrLf
+logContent = logContent & "Data backed up     : " & FormatBytes(statsTotalBytes) & vbCrLf
+logContent = logContent & "Total backup size  : " & FormatBytes(backupSizeAfter) & vbCrLf
+logContent = logContent & "Backup growth      : " & FormatBytes(backupGrowth) & vbCrLf
+logContent = logContent & "Available space    : " & FormatBytes(availableSpaceAfter) & vbCrLf & vbCrLf
 
 If sourceCountKO > 0 Then
     logContent = logContent & vbCrLf & "ERRORS" & vbCrLf 

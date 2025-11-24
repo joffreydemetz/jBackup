@@ -156,7 +156,7 @@ The setup script automatically creates two scheduled tasks:
 - **At startup** (5 minutes after system boots)
 
 **jBackupCleanup** - Version cleanup task that runs:
-- **Daily** at 2:00 AM
+- **Daily** 2 hours after jBackup config time
 - Maintains the 3-version limit for all backed up files
 - Removes old versions automatically
 
@@ -373,8 +373,14 @@ For issues or questions:
 - Created jBackupCleanup scheduled task to run cleanup.vbs daily at 2:00 PM
 - Added empty folder removal in cleanup task (removes empty directories after version cleanup)
 
+### 1.0.3
+- Added automatic log cleanup (removes log files older than 30 days)
+- Added backup duration tracking
+- Added disk space monitoring (available space before/after backup)
+- Added total backup size calculation
+- Added backup growth tracking
+- Added data transfer statistics (bytes backed up per session)
+
 ### TODO 
-- Calculate total backup size and duration
-- Calculate disk space used by backups
-- Calculate available disk space before backup starts
+- ignore temporary files (.~, *.crdownload, etc)
 
