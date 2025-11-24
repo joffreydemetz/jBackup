@@ -37,72 +37,6 @@ Sub FatalError(message)
     WScript.Quit 1
 End Sub
 
-Function GetDriveSpace(drivePath)
-    ' Returns available space on drive in bytes
-    Dim drive
-    Set drive = FSO.GetDrive(FSO.GetDriveName(drivePath))
-    GetDriveSpace = drive.AvailableSpace
-End Function
-
-Function FormatBytes(bytes)
-    ' Format bytes to human-readable format
-    Dim result
-    If bytes >= 1073741824 Then ' 1 GB
-        result = FormatNumber(bytes / 1073741824, 2) & " GB"
-    ElseIf bytes >= 1048576 Then ' 1 MB
-        result = FormatNumber(bytes / 1048576, 2) & " MB"
-    ElseIf bytes >= 1024 Then ' 1 KB
-        result = FormatNumber(bytes / 1024, 2) & " KB"
-    Else
-        result = bytes & " bytes"
-    End If
-    FormatBytes = result
-End Function
-
-Function GetFolderSize(folderPath)
-    ' Recursively calculate folder size in bytes
-    Dim folder, file, subFolder, totalSize
-    totalSize = 0
-    
-    If Not FSO.FolderExists(folderPath) Then
-        GetFolderSize = 0
-        Exit Function
-    End If
-    
-    Set folder = FSO.GetFolder(folderPath)
-    
-    ' Add file sizes
-    For Each file In folder.Files
-        totalSize = totalSize + file.Size
-    Next
-    
-    ' Add subfolder sizes recursively
-    For Each subFolder In folder.SubFolders
-        totalSize = totalSize + GetFolderSize(subFolder.Path)
-    Next
-    
-    GetFolderSize = totalSize
-End Function
-
-Function FormatDuration(seconds)
-    ' Format duration in seconds to human-readable format
-    Dim hours, minutes, secs, result
-    hours = Int(seconds / 3600)
-    minutes = Int((seconds Mod 3600) / 60)
-    secs = seconds Mod 60
-    
-    result = ""
-    If hours > 0 Then
-        result = hours & "h "
-    End If
-    If minutes > 0 Or hours > 0 Then
-        result = result & minutes & "m "
-    End If
-    result = result & secs & "s"
-    
-    FormatDuration = result
-End Function
-
 Sub BackupSubFolders(sourceFolder, cheminDestParent)
     For Each subFolder In sourceFolder.Subfolders
         ' Check if this subfolder is already being processed as a separate source
@@ -128,7 +62,11 @@ End Sub
 Sub BackupFolderFiles(files, currentPath)
     ' copy files from folder
     For Each file In files
-        If IsGenericFilename(FSO.GetBaseName(file.Name)) Then
+        ' Skip temporary files
+        If IsIgnoredFile(file.Name) Then
+            logContent = logContent & "[TEMP] " & file.Path & vbCrLf
+            statsFileTemp = statsFileTemp + 1
+        ElseIf IsGenericFilename(FSO.GetBaseName(file.Name)) Then
             logContent = logContent & "[CHECK] " & file.Path & vbCrLf
             statsFileInvalid = statsFileInvalid + 1
         Else
@@ -248,6 +186,72 @@ Sub CreateDirectoryRecursive(dirPath)
     End If
 End Sub
 
+Function GetDriveSpace(drivePath)
+    ' Returns available space on drive in bytes
+    Dim drive
+    Set drive = FSO.GetDrive(FSO.GetDriveName(drivePath))
+    GetDriveSpace = drive.AvailableSpace
+End Function
+
+Function FormatBytes(bytes)
+    ' Format bytes to human-readable format
+    Dim result
+    If bytes >= 1073741824 Then ' 1 GB
+        result = FormatNumber(bytes / 1073741824, 2) & " GB"
+    ElseIf bytes >= 1048576 Then ' 1 MB
+        result = FormatNumber(bytes / 1048576, 2) & " MB"
+    ElseIf bytes >= 1024 Then ' 1 KB
+        result = FormatNumber(bytes / 1024, 2) & " KB"
+    Else
+        result = bytes & " bytes"
+    End If
+    FormatBytes = result
+End Function
+
+Function GetFolderSize(folderPath)
+    ' Recursively calculate folder size in bytes
+    Dim folder, file, subFolder, totalSize
+    totalSize = 0
+    
+    If Not FSO.FolderExists(folderPath) Then
+        GetFolderSize = 0
+        Exit Function
+    End If
+    
+    Set folder = FSO.GetFolder(folderPath)
+    
+    ' Add file sizes
+    For Each file In folder.Files
+        totalSize = totalSize + file.Size
+    Next
+    
+    ' Add subfolder sizes recursively
+    For Each subFolder In folder.SubFolders
+        totalSize = totalSize + GetFolderSize(subFolder.Path)
+    Next
+    
+    GetFolderSize = totalSize
+End Function
+
+Function FormatDuration(seconds)
+    ' Format duration in seconds to human-readable format
+    Dim hours, minutes, secs, result
+    hours = Int(seconds / 3600)
+    minutes = Int((seconds Mod 3600) / 60)
+    secs = seconds Mod 60
+    
+    result = ""
+    If hours > 0 Then
+        result = hours & "h "
+    End If
+    If minutes > 0 Or hours > 0 Then
+        result = result & minutes & "m "
+    End If
+    result = result & secs & "s"
+    
+    FormatDuration = result
+End Function
+
 Function PathToCamelCase(fullPath)
     ' Convert path to lowercase with underscores (e.g., "C:\Users\PC\Documents" -> "c_users_pc_documents")
     Dim pathWithoutDrive, parts, i, result, part, cleanPart, j, char, driveLetter
@@ -314,6 +318,60 @@ Function PathToCamelCase(fullPath)
     Next
     
     PathToCamelCase = result
+End Function
+
+Function IsIgnoredFile(fileName)
+    ' Check if a file is a temporary file that should be skipped
+    ' Returns True if temporary, False otherwise
+    Dim lowerName, ext
+    lowerName = LCase(fileName)
+    ext = LCase(FSO.GetExtensionName(fileName))
+    
+    ' Check for common temporary file patterns
+
+    ' Office temporary files: starts with .~
+    If Left(lowerName, 2) = ".~" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+
+    ' Office temporary files: extension ends with #
+    If Right(ext, 1) = "#" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    ' Chrome download temporary files
+    If ext = "crdownload" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    ' Firefox download temporary files
+    If ext = "part" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    ' Common temporary extensions
+    If ext = "tmp" Or ext = "temp" Or ext = "bak" Or ext = "cache" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    ' Windows temporary files
+    If Right(lowerName, 4) = ".tmp" Or Right(lowerName, 5) = ".temp" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    ' Thumbs.db and desktop.ini
+    If lowerName = "thumbs.db" Or lowerName = "desktop.ini" Then
+        IsIgnoredFile = True
+        Exit Function
+    End If
+    
+    IsIgnoredFile = False
 End Function
 
 Function IsGenericFilename(baseName)
@@ -521,7 +579,7 @@ For i = 0 To sourceCount - 1
     
     logContent = logContent & "Source " & (i+1) & ": " & sourcePath
     If targetSubfolder <> "" Then
-        logContent = logContent & " -> " & targetSubfolder & "/"
+        logContent = logContent & " -> " & targetSubfolder & "\"
     End If
     
     If Not FSO.FolderExists(sourcePath) Then
@@ -582,7 +640,7 @@ logContent = logContent & vbCrLf & "=-=-=-=-=-=-=-=-=-=" & vbCrLf & vbCrLf
 
 Dim sourceFolderName, targetFolderName, targetFullPath
 Dim statsFolderNew, statsFolderSaved, statsFolderSkip
-Dim statsFileNew, statsFileUpdate, statsFileIgnore, statsFileDelete, statsFileInvalid
+Dim statsFileNew, statsFileUpdate, statsFileIgnore, statsFileDelete, statsFileInvalid, statsFileTemp
 statsFolderNew = 0
 statsFolderSaved = 0
 statsFolderSkip = 0
@@ -591,6 +649,7 @@ statsFileUpdate = 0
 statsFileIgnore = 0
 statsFileDelete = 0
 statsFileInvalid = 0
+statsFileTemp = 0
 statsTotalBytes = 0
 
 Dim sourceIndex
@@ -661,6 +720,7 @@ logContent = logContent & "New files          : " & statsFileNew & vbCrLf
 logContent = logContent & "Modified files     : " & statsFileUpdate & vbCrLf
 logContent = logContent & "Ignored files      : " & statsFileIgnore & vbCrLf
 logContent = logContent & "Invalid files      : " & statsFileInvalid & vbCrLf
+logContent = logContent & "Temporary files    : " & statsFileTemp & vbCrLf
 logContent = logContent & "Deleted files      : " & statsFileDelete & vbCrLf
 logContent = logContent & "Data backed up     : " & FormatBytes(statsTotalBytes) & vbCrLf
 logContent = logContent & "Total backup size  : " & FormatBytes(backupSizeAfter) & vbCrLf
