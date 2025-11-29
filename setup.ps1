@@ -5,12 +5,12 @@ $targetPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Backup"
 $taskPath = "\JDZ\"
 
 # backup task settings
-$backupScriptPath = Join-Path $PSScriptRoot "backup.vbs"
+$backupScriptPath = Join-Path $PSScriptRoot "backup.ps1"
 $taskName = "jBackup"
 $scheduleHour = "12:00"
 
 # cleanup task settings
-$cleanupScriptPath = Join-Path $PSScriptRoot "cleanup.vbs"
+$cleanupScriptPath = Join-Path $PSScriptRoot "cleanup.ps1"
 $cleanupTaskName = "jBackupCleanup"
 $cleanupScheduleHour = "14:00"  # 2 hours after backup
 
@@ -337,13 +337,13 @@ catch {
 }
 
 if (-not (Test-Path $backupScriptPath)) {
-    Write-Host "FATAL ERROR: backup.vbs not found in current directory" -ForegroundColor Red
+    Write-Host "FATAL ERROR: backup.ps1 not found in current directory" -ForegroundColor Red
     exit 1
 }
 
 if (-not (Test-Path $cleanupScriptPath)) {
-    Write-Host "FATAL ERROR: cleanup.vbs not found in current directory" -ForegroundColor Yellow
-    exit 1
+    Write-Host "WARNING: cleanup.ps1 not found in current directory" -ForegroundColor Yellow
+    Write-Host "Cleanup task will not be created" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -640,11 +640,11 @@ Write-Host ""
 Write-Host "Task configuration complete !" -ForegroundColor Green
 Write-Host ""
 
-# Prompt to execute the backup.vbs now
+# Prompt to execute the backup script now
 $response = Read-Host "Do you want to run the backup now? (Y/N)"
 if ($response -eq 'Y' -or $response -eq 'y') {
     Write-Host "Executing backup script..." -ForegroundColor Green
-    Start-Process -FilePath "wscript.exe" -ArgumentList "`"$backupScriptPath`"" -NoNewWindow -Wait
+    & $backupScriptPath
     Write-Host "Backup script execution completed." -ForegroundColor Green
 } 
 else {
@@ -674,7 +674,7 @@ Write-Host "Backup Days ...................... $($scheduleDays -join ', ')" -For
 Write-Host "Script ........................... $backupScriptPath" -ForegroundColor Cyan
 
 # Create the scheduled task action
-$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$backupScriptPath`"" -WorkingDirectory $PSScriptRoot
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$backupScriptPath`"" -WorkingDirectory $PSScriptRoot
 
 if ( $scheduleDelay -eq 'weekly' ) {
     $trigger1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $scheduleDays -At "$scheduleHour"
@@ -728,54 +728,61 @@ Write-Host ""
 # Setup cleanup task
 #####
 
-Write-Host "Creating cleanup task to maintain version history..." -ForegroundColor Green
-Write-Host "Task path ........................ $taskPath" -ForegroundColor Cyan
-Write-Host "Task name ........................ $cleanupTaskName" -ForegroundColor Cyan
-Write-Host "Cleanup Hour ..................... $cleanupScheduleHour" -ForegroundColor Cyan
-Write-Host "Cleanup Days ..................... Everyday" -ForegroundColor Cyan
-Write-Host "Script ........................... $cleanupScriptPath" -ForegroundColor Cyan
-Write-Host ""
+if (Test-Path $cleanupScriptPath) {
+    Write-Host "Creating cleanup task to maintain version history..." -ForegroundColor Green
+    Write-Host "Task path ........................ $taskPath" -ForegroundColor Cyan
+    Write-Host "Task name ........................ $cleanupTaskName" -ForegroundColor Cyan
+    Write-Host "Cleanup Hour ..................... $cleanupScheduleHour" -ForegroundColor Cyan
+    Write-Host "Cleanup Days ..................... Everyday" -ForegroundColor Cyan
+    Write-Host "Script ........................... $cleanupScriptPath" -ForegroundColor Cyan
+    Write-Host ""
 
-$cleanupAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$cleanupScriptPath`"" -WorkingDirectory $PSScriptRoot
+    # Create the scheduled task action
+    $cleanupAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$cleanupScriptPath`"" -WorkingDirectory $PSScriptRoot
 
-$cleanupTrigger = New-ScheduledTaskTrigger -Daily -At "$cleanupScheduleHour"
+    $cleanupTrigger = New-ScheduledTaskTrigger -Daily -At "$cleanupScheduleHour"
 
-$cleanupSettings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries:$false `
-    -DontStopIfGoingOnBatteries:$true `
-    -StartWhenAvailable:$true `
-    -RunOnlyIfNetworkAvailable:$false `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
-    -MultipleInstances Queue
+    $cleanupSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries:$false `
+        -DontStopIfGoingOnBatteries:$true `
+        -StartWhenAvailable:$true `
+        -RunOnlyIfNetworkAvailable:$false `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
+        -MultipleInstances Queue
 
-$cleanupPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
+    $cleanupPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
 
-Register-ScheduledTask `
-    -TaskPath $taskPath `
-    -TaskName $cleanupTaskName `
-    -Action $cleanupAction `
-    -Trigger $cleanupTrigger `
-    -Settings $cleanupSettings `
-    -Principal $cleanupPrincipal `
-    -Description "Cleanup old backup versions (keep 3 most recent per file)"
+    Register-ScheduledTask `
+        -TaskPath $taskPath `
+        -TaskName $cleanupTaskName `
+        -Action $cleanupAction `
+        -Trigger $cleanupTrigger `
+        -Settings $cleanupSettings `
+        -Principal $cleanupPrincipal `
+        -Description "Cleanup old backup versions (keep 3 most recent per file)"
 
-Write-Host ""
-Write-Host "Cleanup task created successfully!" -ForegroundColor Green
-Write-Host "  Get-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
-Write-Host "  Start-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
-Write-Host "  Unregister-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName' -Confirm:`$false" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Cleanup task created successfully!" -ForegroundColor Green
+    Write-Host "  Get-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
+    Write-Host "  Start-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName'" -ForegroundColor White
+    Write-Host "  Unregister-ScheduledTask -TaskPath '$taskPath' -TaskName '$cleanupTaskName' -Confirm:`$false" -ForegroundColor White
 
-# Display next run time
-Start-Sleep -Seconds 1
-try {
-    $taskInfo = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $cleanupTaskName -ErrorAction Stop
-    Write-Host "  Next scheduled run: $($taskInfo.NextRunTime)"
+    # Display next run time
+    Start-Sleep -Seconds 1
+    try {
+        $taskInfo = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $cleanupTaskName -ErrorAction Stop
+        Write-Host "  Next scheduled run: $($taskInfo.NextRunTime)"
+    }
+    catch {
+        Write-Host "  Task registered successfully but info not yet available." -ForegroundColor Yellow
+        Write-Host "  Run 'Get-ScheduledTaskInfo -TaskPath ""$taskPath"" -TaskName ""$cleanupTaskName""' to see details later." -ForegroundColor Yellow
+    }
+    Write-Host ""
 }
-catch {
-    Write-Host "  Task registered successfully but info not yet available." -ForegroundColor Yellow
-    Write-Host "  Run 'Get-ScheduledTaskInfo -TaskPath ""$taskPath"" -TaskName ""$cleanupTaskName""' to see details later." -ForegroundColor Yellow
+else {
+    Write-Host "Skipping cleanup task creation (no cleanup script found)" -ForegroundColor Yellow
+    Write-Host ""
 }
-Write-Host ""
 
 Write-Host "SETUP COMPLETE" -ForegroundColor Green
 exit 0
