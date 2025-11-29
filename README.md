@@ -1,6 +1,6 @@
 # jBackup - Automatic Backup System
 
-A comprehensive VBScript-based backup solution with PowerShell configuration assistant for Windows systems.
+A comprehensive PowerShell backup solution with interactive configuration assistant for Windows systems.
 
 ## Features
 
@@ -35,8 +35,8 @@ A comprehensive VBScript-based backup solution with PowerShell configuration ass
 
 ```
 jbackup/
-├── backup.vbs          # Main backup script (VBScript)
-├── cleanup.vbs         # Version cleanup script (VBScript)
+├── backup.ps1          # Main backup script (PowerShell)
+├── cleanup.ps1         # Version cleanup script (PowerShell)
 ├── setup.ps1           # Interactive configuration assistant (PowerShell)
 ├── backup.ini          # Configuration file (auto-generated)
 ├── invalidnames.txt    # Generic filename patterns (auto-generated)
@@ -143,11 +143,14 @@ This file is automatically created by `setup.ps1` with a default list of 30+ com
 
 ### Manual Execution
 Run the backup script manually:
-```cmd
-wscript.exe backup.vbs
+```powershell
+.\backup.ps1
 ```
 
-Or double-click `backup.vbs` in Windows Explorer.
+Or run with custom config path:
+```powershell
+.\backup.ps1 -ConfigPath "C:\path\to\custom\backup.ini"
+```
 
 ### Scheduled Execution
 The setup script automatically creates two scheduled tasks:
@@ -285,8 +288,8 @@ The main Documents backup will automatically skip the `Work` subfolder, preventi
 
 ### Setup Script Issues
 
-**"FATAL ERROR: backup.vbs not found"**
-- Ensure `backup.vbs` is in the same directory as `setup.ps1`
+**"FATAL ERROR: backup.ps1 not found"**
+- Ensure `backup.ps1` is in the same directory as `setup.ps1`
 
 **"Drive not accessible"**
 - Check if the target path drive exists and is mounted
@@ -316,8 +319,7 @@ The main Documents backup will automatically skip the `Work` subfolder, preventi
 
 ### System Requirements
 - Windows 7 or later
-- PowerShell 5.1+ (for setup)
-- VBScript (built into Windows)
+- PowerShell 5.1+ (built into Windows 10/11)
 - Write access to target backup location
 
 ### Performance
@@ -333,7 +335,7 @@ The main Documents backup will automatically skip the `Work` subfolder, preventi
 - No network access required
 
 ### Limitations
-- Windows only (VBScript dependency)
+- Windows only (PowerShell dependency)
 - No compression or encryption
 - No network backup validation
 - Manual recovery required for file restoration
@@ -383,6 +385,18 @@ For issues or questions:
 - Added data transfer statistics (bytes backed up per session)
 - Added temporary file filtering (skips office temp files, temp downloads, thumbs.db, desktop.ini, etc.)
 
+### 2.0.0
+- **Complete rewrite to PowerShell** for better file system access and permission handling
+- Removed VBScript dependency (backup.vbs, cleanup.vbs deprecated)
+- Native PowerShell cmdlets (Get-ChildItem, Copy-Item, Move-Item)
+- Enhanced error handling with try/catch blocks
+- Better access to protected files with -Force parameter
+- Improved UTF-8 file handling
+- All features maintained from VBScript version
+
 ### TODO 
-- Nothing planned
+- Set the copy/move option per source folder
+- Add exclusion patterns for files/folders (wildcards)
+- Add email notification option with summary log
+
 
