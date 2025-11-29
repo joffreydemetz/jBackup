@@ -244,10 +244,9 @@ C:\Backup\.ver\documents\20251118_document.txt    (version from 2025-11-18)
 
 ### Generic Filename Handling
 
-Files with generic names are flagged in logs but still backed up normally:
+Files with generic names are flagged in logs and need review before backup.
 ```
 [CHECK] C:\source\document.pdf
-[NEW] C:\Backup\target\document.pdf
 ```
 
 This helps you identify files that might need better naming for organization. The detection works by:
